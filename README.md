@@ -31,20 +31,20 @@ A full-stack web application for planning city trips. Browse points of interest 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           React 18 + TypeScript (Vite)       │
-│        Leaflet.js · Tailwind CSS             │
-└──────────────────┬──────────────────────────┘
-                   │  REST API  (JSON + JWT)
-┌──────────────────▼──────────────────────────┐
-│         Spring Boot 3  REST API              │
-│   Spring Security · JPA/Hibernate · Lombok   │
-└────┬──────────────┬───────────────┬──────────┘
-     │              │               │
-┌────▼────┐  ┌──────▼──────┐  ┌────▼──────────┐
-│PostgreSQL│  │ OpenAI API  │  │OpenStreetMap  │
-│  (JPA)  │  │ GPT-4o-mini │  │Overpass + OSRM│
-└─────────┘  └─────────────┘  └───────────────┘
+        ┌───────────────────────────────────┐
+        │   React 18 + TypeScript  (Vite)   │
+        │   Leaflet.js  ·  Tailwind CSS     │
+        └────────────────┬──────────────────┘
+                         │  REST API (JSON + JWT)
+        ┌────────────────▼──────────────────┐
+        │       Spring Boot 3  REST API     │
+        │  Spring Security · JPA/Hibernate  │
+        └──────┬───────────┬───────────┬────┘
+               │           │           │
+        ┌──────▼──┐  ┌──────▼──┐  ┌───▼──────────┐
+        │Postgres │  │  OpenAI │  │OpenStreetMap │
+        │  (JPA)  │  │GPT-4o-m.│  │Overpass+OSRM │
+        └─────────┘  └─────────┘  └──────────────┘
 ```
 
 ---
