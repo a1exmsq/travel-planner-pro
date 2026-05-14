@@ -1,0 +1,17 @@
+{
+  "name": "Travel Planner Pro",
+  "short_name": "Travel Pro",
+  "description": "Plan routes, itineraries, budget, packing, and memories in one travel workspace.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbf7ef",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
