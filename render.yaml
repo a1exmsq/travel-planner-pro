@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: travel-planner-backend
+    runtime: docker
+    repo: https://github.com/a1exmsq/travel-planner-pro
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    envVars:
+      - key: DB_HOST
+        fromDatabase:
+          name: travel-planner-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: travel-planner-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: travel-planner-db
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: travel-planner-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: travel-planner-db
+          property: password
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://travel-planner-frontend.onrender.com
+      - key: SERVER_PORT
+        value: 8080
+      - key: OPENAI_API_KEY
+        value: ""
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+
+  - type: static
+    name: travel-planner-frontend
+    runtime: static
+    repo: https://github.com/a1exmsq/travel-planner-pro
+    region: frankfurt
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    publishDir: frontend/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://travel-planner-backend.onrender.com/api
+
+databases:
+  - name: travel-planner-db
+    plan: free
+    region: frankfurt

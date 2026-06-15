@@ -62,7 +62,17 @@ A full-stack web application for planning city trips. Browse points of interest 
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Live Demo
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/a1exmsq/travel-planner-pro)
+
+Click the button above to deploy the full stack (backend + frontend + PostgreSQL) to Render for free.
+
+> **Note:** The free Render plan has a cold start (~30 s) after inactivity. OpenAI route generation works only if you add an `OPENAI_API_KEY` environment variable; otherwise the app falls back to the built-in algorithm.
+
+---
+
+## 🛠️ Getting Started
 
 ### Prerequisites
 - Java 21+
