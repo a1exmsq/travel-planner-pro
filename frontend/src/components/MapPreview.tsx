@@ -81,14 +81,6 @@ function defaultTransportMode(routeType?: string): TransportMode {
   return 'foot' // CITY, REGION, CUSTOM and unknown → walking by default
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
 function createPoiIcon(style: MarkerStyle, category: string, isHidden: boolean, highlighted: boolean) {
   const cacheKey = `${style.color}-${category}-${isHidden ? 'hidden' : 'global'}-${highlighted ? 'highlighted' : 'base'}`
   const cached = poiIconCache.get(cacheKey)
