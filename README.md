@@ -126,6 +126,31 @@ App → `http://localhost:5173`
 
 ---
 
+## 📸 Screenshots
+
+### City Discovery
+![City discovery](screenshots/city-discovery.png)
+
+### City Landmarks
+![City landmarks](screenshots/city-landmarks.png)
+
+### AI Route Generator
+![AI route generator](screenshots/ai-generator.png)
+
+### AI-Generated Itinerary
+![AI-generated itinerary](screenshots/ai-result.png)
+
+### Map Builder
+![Map builder](screenshots/map-builder.png)
+
+### Route Workspace
+![Route workspace](screenshots/route-workspace.png)
+
+### Community Rankings
+![Community rankings](screenshots/rankings.png)
+
+---
+
 ## 💡 Technical Highlights
 
 - **AI with fallback** — when OpenAI is unavailable the app switches to a deterministic route-building algorithm, so the feature never fully breaks
