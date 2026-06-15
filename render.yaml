@@ -38,13 +38,14 @@ services:
       - key: OPENAI_MODEL
         value: gpt-4o-mini
 
-  - type: static
+  - type: web
     name: travel-planner-frontend
+    runtime: node
     repo: https://github.com/a1exmsq/travel-planner-pro
     region: frankfurt
     plan: free
     buildCommand: cd frontend && npm install && npm run build
-    publishDir: frontend/dist
+    startCommand: cd frontend && npx serve -s dist -l ${PORT:-10000}
     envVars:
       - key: VITE_API_BASE_URL
         value: https://travel-planner-backend.onrender.com/api
