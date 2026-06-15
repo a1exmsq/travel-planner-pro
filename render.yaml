@@ -36,6 +36,10 @@ services:
         value: ""
       - key: OPENAI_MODEL
         value: gpt-4o-mini
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: update
+      - key: SPRING_FLYWAY_ENABLED
+        value: false
 
   - type: web
     name: travel-planner-frontend
