@@ -64,6 +64,7 @@ public class SecurityConfig {
                         // Auth endpoints are always public (login / register)
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/api/health").permitAll()
                         // Read-only access to content is public so unregistered users
                         // can browse routes, POIs and city data without logging in
                         .requestMatchers(HttpMethod.GET, "/api/routes/**").permitAll()
