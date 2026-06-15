@@ -40,7 +40,6 @@ services:
 
   - type: static
     name: travel-planner-frontend
-    runtime: static
     repo: https://github.com/a1exmsq/travel-planner-pro
     region: frankfurt
     plan: free
