@@ -1,27 +1,56 @@
 package com.travel.planner.service;
 
-import com.travel.planner.dto.*;
-import com.travel.planner.entity.*;
+import com.travel.planner.config.RouteConstants;
+import com.travel.planner.dto.PoiResponseDTO;
+import com.travel.planner.dto.RoutePlanDTO;
+import com.travel.planner.dto.RouteResponseDTO;
+import com.travel.planner.dto.RouteShortDTO;
+import com.travel.planner.dto.UserShortDTO;
+import com.travel.planner.entity.City;
+import com.travel.planner.entity.Country;
+import com.travel.planner.entity.PointOfInterest;
+import com.travel.planner.entity.Route;
+import com.travel.planner.entity.RoutePOI;
+import com.travel.planner.entity.RouteType;
+import com.travel.planner.entity.User;
 import com.travel.planner.exception.ForbiddenException;
 import com.travel.planner.exception.ResourceNotFoundException;
-import com.travel.planner.repository.*;
+import com.travel.planner.mapper.RouteMapper;
+import com.travel.planner.repository.CityRepository;
+import com.travel.planner.repository.CountryRepository;
+import com.travel.planner.repository.PointOfInterestRepository;
+import com.travel.planner.repository.RouteJournalEntryRepository;
+import com.travel.planner.repository.RoutePackingItemRepository;
+import com.travel.planner.repository.RoutePOIRepository;
+import com.travel.planner.repository.RouteRepository;
+import com.travel.planner.repository.UserStatsRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RouteService {
-
-    private static final int DEFAULT_PAGE_SIZE = 20;
-    private static final int MAX_PAGE_SIZE = 100;
 
     private final RouteRepository routeRepository;
     private final RoutePOIRepository routePOIRepository;
@@ -35,40 +64,28 @@ public class RouteService {
     private final BudgetService budgetService;
     private final RoutePackingItemRepository routePackingItemRepository;
     private final RouteJournalEntryRepository routeJournalEntryRepository;
+    private final RouteMapper routeMapper;
+
+    private final ConcurrentHashMap<Long, Object> routeLocks = new ConcurrentHashMap<>();
 
     @Transactional
-    public RouteResponseDTO createRoute(CreateRouteRequestDTO request, User author) {
+    public RouteResponseDTO createRoute(com.travel.planner.dto.CreateRouteRequestDTO request, User author) {
         Route route = new Route();
         route.setUser(author);
         route.setLikeCount(0);
-        applyRouteMetadata(
-                route,
-                request.getName(),
-                request.getDescription(),
-                request.isPublic(),
-                request.getMainImageUrl(),
-                request.getRouteType(),
-                request.getPrimaryCountryId(),
-                request.getPrimaryCityId(),
-                request.getRegionLabel(),
-                request.getLocationSummary(),
-                request.getVibeTags(),
-                request.getStartDate(),
-                request.getEndDate(),
-                request.getTotalBudget(),
-                request.getCurrency()
-        );
+        applyRouteMetadata(route, toRouteMetadata(request));
 
         Route saved = routeRepository.save(route);
-        refreshRouteMetrics(saved);
-        syncLocationCounters(null, null, saved.getPrimaryCountry(), saved.getPrimaryCity());
+        Route withMetrics = refreshRouteMetrics(saved);
+        syncLocationCounters(null, null, withMetrics.getPrimaryCountry(), withMetrics.getPrimaryCity());
         gamificationService.checkAndUnlockAchievements(author.getId());
-        log.info("Route created: id={} name='{}' user={}", saved.getId(), saved.getName(), author.getUsername());
-        return convertToDTO(saved, author);
+        log.info("Route created: id={} name='{}' user={}", withMetrics.getId(), withMetrics.getName(), author.getUsername());
+        Route refreshed = refreshWithDetails(withMetrics.getId());
+        return enrichResponseDto(routeMapper.toResponseDto(refreshed), refreshed, author);
     }
 
     @Transactional
-    public RouteResponseDTO updateRoute(Long routeId, UpdateRouteRequestDTO request, User currentUser) {
+    public RouteResponseDTO updateRoute(Long routeId, com.travel.planner.dto.UpdateRouteRequestDTO request, User currentUser) {
         Route route = routeAccessService.findEditableRoute(routeId, currentUser);
 
         if (request.getIsPublic() != null && request.getIsPublic() != route.isPublic()) {
@@ -78,46 +95,28 @@ public class RouteService {
         Country oldCountry = route.getPrimaryCountry();
         City oldCity = route.getPrimaryCity();
 
-        applyRouteMetadata(
-                route,
-                request.getName() != null && !request.getName().isBlank() ? request.getName() : route.getName(),
-                request.getDescription() != null ? request.getDescription() : route.getDescription(),
-                request.getIsPublic() != null ? request.getIsPublic() : route.isPublic(),
-                request.getMainImageUrl() != null ? request.getMainImageUrl() : route.getMainImageUrl(),
-                request.getRouteType() != null ? request.getRouteType() : route.getRouteType() != null ? route.getRouteType().name() : RouteType.CUSTOM.name(),
-                request.getPrimaryCountryId() != null ? request.getPrimaryCountryId() : route.getPrimaryCountry() != null ? route.getPrimaryCountry().getId() : null,
-                request.getPrimaryCityId() != null ? request.getPrimaryCityId() : route.getPrimaryCity() != null ? route.getPrimaryCity().getId() : null,
-                request.getRegionLabel() != null ? request.getRegionLabel() : route.getRegionLabel(),
-                request.getLocationSummary() != null ? request.getLocationSummary() : route.getLocationSummary(),
-                request.getVibeTags() != null ? request.getVibeTags() : new ArrayList<>(route.getVibeTags()),
-                request.getStartDate() != null ? request.getStartDate() : route.getStartDate(),
-                request.getEndDate() != null ? request.getEndDate() : route.getEndDate(),
-                request.getTotalBudget() != null ? request.getTotalBudget() : route.getTotalBudget(),
-                request.getCurrency() != null ? request.getCurrency() : route.getCurrency()
-        );
+        applyRouteMetadata(route, toRouteMetadata(route, request));
 
         Route saved = routeRepository.save(route);
-        refreshRouteMetrics(saved);
-        syncLocationCounters(oldCountry, oldCity, saved.getPrimaryCountry(), saved.getPrimaryCity());
-        return convertToDTO(saved, currentUser);
+        Route withMetrics = refreshRouteMetrics(saved);
+        syncLocationCounters(oldCountry, oldCity, withMetrics.getPrimaryCountry(), withMetrics.getPrimaryCity());
+        Route refreshed = refreshWithDetails(withMetrics.getId());
+        return enrichResponseDto(routeMapper.toResponseDto(refreshed), refreshed, currentUser);
     }
 
-    public List<RouteResponseDTO> getAllPublicRoutes(String tag) {
-        return getAllPublicRoutes(tag, 0, DEFAULT_PAGE_SIZE);
-    }
-
-    public List<RouteResponseDTO> getAllPublicRoutes(String tag, int page, int size) {
-        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        List<Route> routes = tag != null && !tag.isBlank()
-                ? filterByTag(routeRepository.findAllPublic(), tag)
-                : routeRepository.findAllPublic(PageRequest.of(page, safeSize));
-        return routes.stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
+    public Page<RouteShortDTO> getAllPublicRoutes(String tag, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        Page<Route> routes = hasText(tag)
+                ? routeRepository.findPublicByTag(normalizeTag(tag), pageable)
+                : routeRepository.findAllPublic(pageable);
+        return enrichShortPage(routes, null);
     }
 
     public RouteResponseDTO getRouteById(Long id, User currentUser) {
-        return convertToDTO(findViewableRouteEntity(id, currentUser), currentUser);
+        Route route = routeRepository.findByIdWithDetails(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Route not found"));
+        routeAccessService.checkCanView(route, currentUser);
+        return enrichResponseDto(routeMapper.toResponseDto(route), route, currentUser);
     }
 
     @Transactional
@@ -132,9 +131,9 @@ public class RouteService {
     }
 
     @Transactional
-    public RouteResponseDTO addPoiToRoute(Long routeId, AddPoiToRouteRequestDTO request, User currentUser) {
+    public RouteResponseDTO addPoiToRoute(Long routeId, com.travel.planner.dto.AddPoiToRouteRequestDTO request, User currentUser) {
         if (!request.isValid()) {
-            throw new RuntimeException("Provide either poiId or custom coordinates");
+            throw new IllegalArgumentException("Provide either poiId or custom coordinates");
         }
 
         Route route = routeAccessService.findEditableRoute(routeId, currentUser);
@@ -142,7 +141,7 @@ public class RouteService {
         RoutePOI link = new RoutePOI();
         link.setRoute(route);
         link.setTravelTimeMinutes(request.getTravelTimeMinutes());
-        link.setOrderIndex(route.getRoutePois().size() + 1);
+        link.setOrderIndex(nextStopOrder(routeId));
 
         if (request.getPoiId() != null) {
             PointOfInterest poi = poiRepository.findById(request.getPoiId())
@@ -157,10 +156,9 @@ public class RouteService {
         }
 
         routePOIRepository.save(link);
-        Route saved = routeAccessService.getRouteOrThrow(routeId);
-        refreshRouteMetrics(saved);
+        Route withMetrics = refreshRouteMetrics(refreshWithDetails(routeId));
         gamificationService.checkAndUnlockAchievements(currentUser.getId());
-        return convertToDTO(saved, currentUser);
+        return enrichResponseDto(routeMapper.toResponseDto(withMetrics), withMetrics, currentUser);
     }
 
     @Transactional
@@ -168,9 +166,10 @@ public class RouteService {
         RoutePOI link = routePOIRepository.findById(routePoiId)
                 .orElseThrow(() -> new ResourceNotFoundException("Route stop link not found"));
         routeAccessService.checkCanEdit(link.getRoute(), currentUser);
+        Long routeId = link.getRoute().getId();
         routePOIRepository.deleteById(routePoiId);
-        normalizeStopOrder(link.getRoute().getId());
-        refreshRouteMetrics(routeAccessService.getRouteOrThrow(link.getRoute().getId()));
+        normalizeStopOrder(routeId);
+        refreshRouteMetrics(refreshWithDetails(routeId));
     }
 
     @Transactional
@@ -180,13 +179,14 @@ public class RouteService {
         routeAccessService.checkCanEdit(link.getRoute(), currentUser);
         link.setTravelTimeMinutes(travelTimeMinutes);
         PoiResponseDTO dto = mapRoutePOItoDTO(routePOIRepository.save(link));
-        refreshRouteMetrics(routeAccessService.getRouteOrThrow(link.getRoute().getId()));
+        refreshRouteMetrics(refreshWithDetails(link.getRoute().getId()));
         return dto;
     }
 
     @Transactional
     public void reorderStops(Long routeId, List<Long> orderedRoutePoiIds, User currentUser) {
-        Route route = routeAccessService.findEditableRoute(routeId, currentUser);
+        routeAccessService.findEditableRoute(routeId, currentUser);
+        List<RoutePOI> links = new ArrayList<>();
         for (int index = 0; index < orderedRoutePoiIds.size(); index++) {
             Long routePoiId = orderedRoutePoiIds.get(index);
             RoutePOI link = routePOIRepository.findById(routePoiId)
@@ -195,9 +195,10 @@ public class RouteService {
                 throw new ForbiddenException("Stop does not belong to this route");
             }
             link.setOrderIndex(index + 1);
-            routePOIRepository.save(link);
+            links.add(link);
         }
-        refreshRouteMetrics(route);
+        routePOIRepository.saveAll(links);
+        refreshRouteMetrics(refreshWithDetails(routeId));
     }
 
     @Transactional
@@ -205,7 +206,8 @@ public class RouteService {
         Route route = routeAccessService.findEditableRoute(routeId, currentUser);
         routeOptimizerService.optimizeRoute(route);
         Route saved = routeRepository.save(route);
-        return convertToDTO(saved, currentUser);
+        Route refreshed = refreshWithDetails(saved.getId());
+        return enrichResponseDto(routeMapper.toResponseDto(refreshed), refreshed, currentUser);
     }
 
     @Transactional
@@ -246,111 +248,91 @@ public class RouteService {
         Route saved = routeRepository.save(copy);
         syncLocationCounters(null, null, saved.getPrimaryCountry(), saved.getPrimaryCity());
 
-        for (RoutePOI src : original.getRoutePois()) {
-            RoutePOI dst = new RoutePOI();
-            dst.setRoute(saved);
-            dst.setPoi(src.getPoi());
-            dst.setOrderIndex(src.getOrderIndex());
-            dst.setTravelTimeMinutes(src.getTravelTimeMinutes());
-            dst.setCustomName(src.getCustomName());
-            dst.setCustomLatitude(src.getCustomLatitude());
-            dst.setCustomLongitude(src.getCustomLongitude());
-            routePOIRepository.save(dst);
-        }
+        List<RoutePOI> copiedPois = original.getRoutePois().stream()
+                .sorted(Comparator.comparing(RoutePOI::getOrderIndex))
+                .map(src -> copyRoutePoi(src, saved))
+                .toList();
+        routePOIRepository.saveAll(copiedPois);
 
-        refreshRouteMetrics(saved);
+        Route withMetrics = refreshRouteMetrics(refreshWithDetails(saved.getId()));
         gamificationService.checkAndUnlockAchievements(newUser.getId());
-        return convertToDTO(saved, newUser);
+        return enrichResponseDto(routeMapper.toResponseDto(withMetrics), withMetrics, newUser);
     }
 
-    public List<RouteResponseDTO> searchByName(String name, String tag) {
-        return filterByTag(routeRepository.findPublicByName(name), tag).stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
+    public Page<RouteShortDTO> searchByName(String name, String tag, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        String normalizedName = name != null ? name.trim() : "";
+        Page<Route> routes = hasText(tag)
+                ? routeRepository.findPublicByNameAndTag(normalizedName, normalizeTag(tag), pageable)
+                : routeRepository.findPublicByName(normalizedName, pageable);
+        return enrichShortPage(routes, null);
     }
 
-    public List<RouteResponseDTO> getPublicRoutesByUsername(String username) {
-        return routeRepository.findPublicByUsername(username).stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
+    public Page<RouteShortDTO> getPublicRoutesByUsername(String username, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        return enrichShortPage(routeRepository.findPublicByUsername(username, pageable), null);
     }
 
-    public List<RouteResponseDTO> getTrendingRoutes(String tag) {
-        return getTrendingRoutes(tag, 0, DEFAULT_PAGE_SIZE);
+    public Page<RouteShortDTO> getTrendingRoutes(String tag, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        Page<Route> routes = hasText(tag)
+                ? routeRepository.findPublicByTagOrderByLikes(normalizeTag(tag), pageable)
+                : routeRepository.findAllPublicOrderByLikes(pageable);
+        return enrichShortPage(routes, null);
     }
 
-    public List<RouteResponseDTO> getTrendingRoutes(String tag, int page, int size) {
-        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        List<Route> routes = tag != null && !tag.isBlank()
-                ? filterByTag(routeRepository.findAllPublicOrderByLikes(), tag)
-                : routeRepository.findAllPublicOrderByLikes(PageRequest.of(page, safeSize));
-        return routes.stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
+    public Page<RouteShortDTO> getPopularRoutes(String tag, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        Page<Route> routes = hasText(tag)
+                ? routeRepository.findPublicByTagOrderByLikes(normalizeTag(tag), pageable)
+                : routeRepository.findAllPublicOrderByLikes(pageable);
+        return enrichShortPage(routes, null);
     }
 
-    public List<RouteResponseDTO> getPopularRoutes(String tag) {
-        return getPopularRoutes(tag, 0, DEFAULT_PAGE_SIZE);
+    public Page<RouteShortDTO> getRoutesByUserId(Long userId, User currentUser, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        return enrichShortPage(routeRepository.findByUserId(userId, pageable), currentUser);
     }
 
-    public List<RouteResponseDTO> getPopularRoutes(String tag, int page, int size) {
-        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        List<Route> routes = tag != null && !tag.isBlank()
-                ? filterByTag(routeRepository.findAllPublicOrderByLikes(), tag)
-                : routeRepository.findAllPublicOrderByLikes(PageRequest.of(page, safeSize));
-        return routes.stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
+    public Page<RouteShortDTO> getPublicRoutesByCountryId(Long countryId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        return enrichShortPage(routeRepository.findPublicByPrimaryCountryIdOrderByLikeCountDesc(countryId, pageable), null);
     }
 
-    public List<RouteResponseDTO> getRoutesByUserId(Long userId) {
-        return routeRepository.findByUserId(userId).stream()
-                .map(route -> convertToDTO(route, route.getUser()))
-                .toList();
-    }
-
-    public List<RouteResponseDTO> getPublicRoutesByCountryId(Long countryId) {
-        return routeRepository.findPublicByPrimaryCountryIdOrderByLikeCountDesc(countryId).stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
-    }
-
-    public List<RouteResponseDTO> getPublicRoutesByCityId(Long cityId) {
-        return routeRepository.findPublicByPrimaryCityIdOrderByLikeCountDesc(cityId).stream()
-                .map(route -> convertToDTO(route, null))
-                .toList();
+    public Page<RouteShortDTO> getPublicRoutesByCityId(Long cityId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, safeSize(size));
+        return enrichShortPage(routeRepository.findPublicByPrimaryCityIdOrderByLikeCountDesc(cityId, pageable), null);
     }
 
     public List<String> getAvailableVibeTags() {
-        return routeRepository.findAllPublic().stream()
-                .flatMap(route -> route.getVibeTags().stream())
-                .collect(Collectors.groupingBy(tag -> tag, Collectors.counting()))
-                .entrySet()
-                .stream()
-                .sorted((left, right) -> {
-                    int countCompare = Long.compare(right.getValue(), left.getValue());
-                    return countCompare != 0 ? countCompare : left.getKey().compareTo(right.getKey());
-                })
-                .map(java.util.Map.Entry::getKey)
-                .limit(12)
+        return routeRepository.findTrendingVibeTags(PageRequest.of(0, RouteConstants.TRENDING_TAG_LIMIT)).stream()
+                .map(row -> (String) row[0])
                 .toList();
     }
 
     public RoutePlanDTO getFullRoutePlan(Long routeId, User currentUser) {
-        Route route = findViewableRouteEntity(routeId, currentUser);
+        Route route = routeRepository.findByIdWithDetails(routeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Route not found"));
+        routeAccessService.checkCanView(route, currentUser);
         List<PoiResponseDTO> stops = route.getRoutePois().stream()
                 .sorted(Comparator.comparing(RoutePOI::getOrderIndex))
                 .map(this::mapRoutePOItoDTO)
-                .collect(Collectors.toList());
+                .toList();
         return new RoutePlanDTO(route.getName(), route.getTotalDurationMinutes() != null ? route.getTotalDurationMinutes() : 0, stops);
     }
 
     public String getRouteDifficulty(Long routeId, User currentUser) {
-        Route route = findViewableRouteEntity(routeId, currentUser);
+        Route route = routeRepository.findByIdWithDetails(routeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Route not found"));
+        routeAccessService.checkCanView(route, currentUser);
         int count = route.getRoutePois().size();
-        if (count <= 3) return "Easy";
-        if (count <= 7) return "Packed day";
-        return "Road warrior";
+        if (count <= RouteConstants.DIFFICULTY_EASY_MAX_STOPS) {
+            return RouteConstants.DIFFICULTY_EASY;
+        }
+        if (count <= RouteConstants.DIFFICULTY_PACKED_MAX_STOPS) {
+            return RouteConstants.DIFFICULTY_PACKED;
+        }
+        return RouteConstants.DIFFICULTY_HARD;
     }
 
     public Route findViewableRouteEntity(Long id, User currentUser) {
@@ -365,10 +347,10 @@ public class RouteService {
         return routeAccessService.canManageCollaborators(route, currentUser);
     }
 
-    public void refreshRouteMetrics(Route route) {
+    public Route refreshRouteMetrics(Route route) {
         Route persisted = routeAccessService.getRouteOrThrow(route.getId());
         routeOptimizerService.recalculateRouteMetrics(persisted);
-        routeRepository.save(persisted);
+        return routeRepository.save(persisted);
     }
 
     public PoiResponseDTO mapRoutePOItoDTO(RoutePOI link) {
@@ -405,133 +387,92 @@ public class RouteService {
     }
 
     public RouteResponseDTO convertToDTO(Route route, User currentUser) {
-        RouteResponseDTO dto = new RouteResponseDTO();
-        dto.setId(route.getId());
-        dto.setName(route.getName());
-        dto.setDescription(route.getDescription());
-        dto.setLikeCounts(route.getLikeCount());
-        dto.setPublic(route.isPublic());
-        dto.setRouteType(route.getRouteType() != null ? route.getRouteType().name() : RouteType.CUSTOM.name());
-        dto.setRegionLabel(route.getRegionLabel());
-        dto.setLocationSummary(route.getLocationSummary());
-        dto.setMainImageUrl(route.getMainImageUrl());
-        dto.setRouteMediaUrls(route.getRouteMediaUrls());
-        dto.setVibeTags(new ArrayList<>(route.getVibeTags()));
-        dto.setStartDate(route.getStartDate());
-        dto.setEndDate(route.getEndDate());
-        dto.setNumberOfDays(route.getNumberOfDays());
-        dto.setTotalBudget(route.getTotalBudget());
-        dto.setCurrency(route.getCurrency());
-        dto.setBudgetSpent(budgetService.getBudgetSpentForRoute(route.getId()));
-        dto.setPackingItemCount(routePackingItemRepository.countByRouteId(route.getId()));
-        dto.setPackedItemCount(routePackingItemRepository.countByRouteIdAndPackedTrue(route.getId()));
-        dto.setJournalEntryCount(routeJournalEntryRepository.countByRouteId(route.getId()));
-        dto.setTotalDistanceKm(route.getTotalDistanceKm() != null ? route.getTotalDistanceKm() : 0.0);
-        dto.setIsOptimized(route.getIsOptimized() != null ? route.getIsOptimized() : false);
-        dto.setAuthor(buildAuthorDTO(route.getUser()));
-        dto.setRemixCount((int) routeRepository.countByForkedFromRouteId(route.getId()));
-        dto.setAccessRole(routeAccessService.resolveAccessRole(route, currentUser));
-        dto.setCanEdit(routeAccessService.canEdit(route, currentUser));
-        dto.setCanManageCollaborators(routeAccessService.canManageCollaborators(route, currentUser));
-
-        if (route.getForkedFromRoute() != null) {
-            dto.setForkedFromRouteId(route.getForkedFromRoute().getId());
-            dto.setForkedFromRouteName(route.getForkedFromRoute().getName());
-            dto.setForkedFromAuthorUsername(route.getForkedFromRoute().getUser().getDisplayUsername());
-        }
-
-        if (route.getOriginalRoute() != null) {
-            dto.setOriginalRouteId(route.getOriginalRoute().getId());
-            dto.setOriginalRouteName(route.getOriginalRoute().getName());
-            dto.setOriginalRouteAuthorUsername(route.getOriginalRoute().getUser().getDisplayUsername());
-        }
-
-        if (route.getPrimaryCountry() != null) {
-            dto.setPrimaryCountryId(route.getPrimaryCountry().getId());
-            dto.setPrimaryCountryName(route.getPrimaryCountry().getName());
-            dto.setPrimaryCountryCode(route.getPrimaryCountry().getCode());
-            dto.setPrimaryCountryImageUrl(route.getPrimaryCountry().getImageUrl());
-        }
-
-        if (route.getPrimaryCity() != null) {
-            dto.setPrimaryCityId(route.getPrimaryCity().getId());
-            dto.setPrimaryCityName(route.getPrimaryCity().getName());
-            dto.setPrimaryCityImageUrl(route.getPrimaryCity().getImageUrl());
-        }
-
-        List<PoiResponseDTO> stops = route.getRoutePois().stream()
-                .sorted(Comparator.comparing(RoutePOI::getOrderIndex))
-                .map(this::mapRoutePOItoDTO)
-                .toList();
-        dto.setStops(stops);
-        dto.setTotalPoints(stops.size());
-        dto.setTotalDurationMinutes(route.getTotalDurationMinutes() != null
-                ? route.getTotalDurationMinutes()
-                : routeOptimizerService.calculateTotalDurationMinutes(route));
-        return dto;
+        Route refreshed = route.getId() != null ? refreshWithDetails(route.getId()) : route;
+        return enrichResponseDto(routeMapper.toResponseDto(refreshed), refreshed, currentUser);
     }
 
-    private UserShortDTO buildAuthorDTO(User user) {
-        UserShortDTO dto = UserShortDTO.from(user);
-        userStatsRepository.findByUserId(user.getId()).ifPresent(stats -> {
-            dto.setLevel(stats.getLevel());
-            dto.setLevelTitle(gamificationService.getLevelTitle(stats.getLevel()));
-        });
-        if (dto.getLevel() == null) {
-            dto.setLevel(1);
-            dto.setLevelTitle(gamificationService.getLevelTitle(1));
-        }
-        return dto;
+    private Route refreshWithDetails(Long routeId) {
+        return routeRepository.findByIdWithDetails(routeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Route not found"));
     }
 
-    private void applyRouteMetadata(
-            Route route,
-            String name,
-            String description,
-            boolean isPublic,
-            String mainImageUrl,
-            String routeTypeRaw,
-            Long primaryCountryId,
-            Long primaryCityId,
-            String regionLabel,
-            String locationSummary,
-            List<String> vibeTags,
-            LocalDate startDate,
-            LocalDate endDate,
-            java.math.BigDecimal totalBudget,
-            String currency
-    ) {
-        City primaryCity = primaryCityId != null
-                ? cityRepository.findById(primaryCityId).orElseThrow(() -> new ResourceNotFoundException("City not found"))
-                : null;
+    private RouteMetadata toRouteMetadata(com.travel.planner.dto.CreateRouteRequestDTO request) {
+        return new RouteMetadata(
+                request.getName(),
+                request.getDescription(),
+                request.isPublic(),
+                request.getMainImageUrl(),
+                request.getRouteType(),
+                request.getPrimaryCountryId(),
+                request.getPrimaryCityId(),
+                request.getRegionLabel(),
+                request.getLocationSummary(),
+                request.getVibeTags(),
+                request.getStartDate(),
+                request.getEndDate(),
+                request.getTotalBudget(),
+                request.getCurrency()
+        );
+    }
 
-        Country primaryCountry = primaryCountryId != null
-                ? countryRepository.findById(primaryCountryId).orElseThrow(() -> new ResourceNotFoundException("Country not found"))
-                : null;
+    private RouteMetadata toRouteMetadata(Route route, com.travel.planner.dto.UpdateRouteRequestDTO request) {
+        return new RouteMetadata(
+                valueOrBlankDefault(request.getName(), route.getName()),
+                valueOrDefault(request.getDescription(), route.getDescription()),
+                valueOrDefault(request.getIsPublic(), route.isPublic()),
+                valueOrDefault(request.getMainImageUrl(), route.getMainImageUrl()),
+                valueOrDefault(request.getRouteType(), () -> route.getRouteType() != null ? route.getRouteType().name() : RouteType.CUSTOM.name()),
+                valueOrDefault(request.getPrimaryCountryId(), () -> route.getPrimaryCountry() != null ? route.getPrimaryCountry().getId() : null),
+                valueOrDefault(request.getPrimaryCityId(), () -> route.getPrimaryCity() != null ? route.getPrimaryCity().getId() : null),
+                valueOrDefault(request.getRegionLabel(), route.getRegionLabel()),
+                valueOrDefault(request.getLocationSummary(), route.getLocationSummary()),
+                valueOrDefault(request.getVibeTags(), () -> new ArrayList<>(route.getVibeTags())),
+                valueOrDefault(request.getStartDate(), route.getStartDate()),
+                valueOrDefault(request.getEndDate(), route.getEndDate()),
+                valueOrDefault(request.getTotalBudget(), route.getTotalBudget()),
+                valueOrDefault(request.getCurrency(), route.getCurrency())
+        );
+    }
 
+    private void applyRouteMetadata(Route route, RouteMetadata metadata) {
+        City primaryCity = resolveCity(metadata.primaryCityId());
+        Country primaryCountry = resolveCountry(metadata.primaryCountryId());
         if (primaryCity != null && primaryCity.getCountry() != null) {
             primaryCountry = primaryCity.getCountry();
         }
 
-        route.setName(name);
-        route.setDescription(description);
-        route.setPublic(isPublic);
-        route.setMainImageUrl(mainImageUrl);
+        route.setName(metadata.name());
+        route.setDescription(metadata.description());
+        route.setPublic(metadata.isPublic());
+        route.setMainImageUrl(metadata.mainImageUrl());
         route.setPrimaryCountry(primaryCountry);
         route.setPrimaryCity(primaryCity);
-        route.setRegionLabel(blankToNull(regionLabel));
-        route.setLocationSummary(buildLocationSummary(blankToNull(locationSummary), primaryCountry, primaryCity, blankToNull(regionLabel)));
-        route.setRouteType(resolveRouteType(routeTypeRaw, primaryCountry, primaryCity, route.getRegionLabel()));
-        route.setVibeTags(normalizeVibeTags(vibeTags));
-        route.setStartDate(startDate);
-        route.setEndDate(endDate);
-        route.setNumberOfDays(calculateNumberOfDays(startDate, endDate));
-        route.setTotalBudget(totalBudget != null ? totalBudget : java.math.BigDecimal.ZERO);
-        route.setCurrency(currency == null || currency.isBlank() ? "USD" : currency.trim().toUpperCase(Locale.ROOT));
+        route.setRegionLabel(blankToNull(metadata.regionLabel()));
+        route.setLocationSummary(buildLocationSummary(blankToNull(metadata.locationSummary()), primaryCountry, primaryCity, blankToNull(metadata.regionLabel())));
+        route.setRouteType(resolveRouteType(metadata.routeTypeRaw(), primaryCountry, primaryCity, blankToNull(metadata.regionLabel())));
+        route.setVibeTags(normalizeVibeTags(metadata.vibeTags()));
+        route.setStartDate(metadata.startDate());
+        route.setEndDate(metadata.endDate());
+        route.setTotalBudget(metadata.totalBudget() != null ? metadata.totalBudget() : BigDecimal.ZERO);
+        route.setCurrency(metadata.currency() == null || metadata.currency().isBlank()
+                ? RouteConstants.DEFAULT_CURRENCY
+                : metadata.currency().trim().toUpperCase(Locale.ROOT));
+    }
+
+    private City resolveCity(Long cityId) {
+        return cityId != null
+                ? cityRepository.findById(cityId).orElseThrow(() -> new ResourceNotFoundException("City not found"))
+                : null;
+    }
+
+    private Country resolveCountry(Long countryId) {
+        return countryId != null
+                ? countryRepository.findById(countryId).orElseThrow(() -> new ResourceNotFoundException("Country not found"))
+                : null;
     }
 
     private RouteType resolveRouteType(String rawValue, Country primaryCountry, City primaryCity, String regionLabel) {
-        if (rawValue != null && !rawValue.isBlank()) {
+        if (hasText(rawValue)) {
             try {
                 return RouteType.valueOf(rawValue.trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException ignored) {
@@ -545,7 +486,7 @@ public class RouteService {
     }
 
     private String buildLocationSummary(String rawSummary, Country primaryCountry, City primaryCity, String regionLabel) {
-        if (rawSummary != null && !rawSummary.isBlank()) {
+        if (hasText(rawSummary)) {
             return rawSummary;
         }
         if (primaryCity != null && primaryCountry != null) {
@@ -561,38 +502,61 @@ public class RouteService {
     }
 
     private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
+        return hasText(value) ? value.trim() : null;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String normalizeTag(String tag) {
+        String normalized = blankToNull(tag);
+        return normalized != null ? normalized.toLowerCase(Locale.ROOT) : null;
     }
 
     private Set<String> normalizeVibeTags(List<String> tags) {
-        if (tags == null) return new LinkedHashSet<>();
-
+        if (tags == null) {
+            return new LinkedHashSet<>();
+        }
         return tags.stream()
                 .map(this::blankToNull)
-                .filter(tag -> tag != null)
+                .filter(Objects::nonNull)
                 .map(tag -> tag.toLowerCase(Locale.ROOT))
-                .map(tag -> tag.length() > 32 ? tag.substring(0, 32) : tag)
-                .limit(8)
+                .map(tag -> tag.length() > RouteConstants.MAX_TAG_LENGTH ? tag.substring(0, RouteConstants.MAX_TAG_LENGTH) : tag)
+                .limit(RouteConstants.MAX_VIBE_TAGS)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private List<Route> filterByTag(List<Route> routes, String tag) {
-        String normalizedTag = blankToNull(tag);
-        if (normalizedTag == null) {
-            return routes;
+    private int nextStopOrder(Long routeId) {
+        Object lock = routeLocks.computeIfAbsent(routeId, id -> new Object());
+        synchronized (lock) {
+            try {
+                return Math.toIntExact(routePOIRepository.countByRouteId(routeId)) + 1;
+            } finally {
+                routeLocks.remove(routeId, lock);
+            }
         }
-
-        String expected = normalizedTag.toLowerCase(Locale.ROOT);
-        return routes.stream()
-                .filter(route -> route.getVibeTags().stream().anyMatch(candidate -> expected.equalsIgnoreCase(candidate)))
-                .toList();
     }
 
-    private Integer calculateNumberOfDays(LocalDate startDate, LocalDate endDate) {
-        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
-            return 0;
+    private void normalizeStopOrder(Long routeId) {
+        List<RoutePOI> ordered = routePOIRepository.findByRouteIdOrderByOrderIndexAsc(routeId);
+        for (int index = 0; index < ordered.size(); index++) {
+            RoutePOI routePOI = ordered.get(index);
+            routePOI.setOrderIndex(index + 1);
         }
-        return (int) java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        routePOIRepository.saveAll(ordered);
+    }
+
+    private RoutePOI copyRoutePoi(RoutePOI source, Route targetRoute) {
+        RoutePOI copy = new RoutePOI();
+        copy.setRoute(targetRoute);
+        copy.setPoi(source.getPoi());
+        copy.setOrderIndex(source.getOrderIndex());
+        copy.setTravelTimeMinutes(source.getTravelTimeMinutes());
+        copy.setCustomName(source.getCustomName());
+        copy.setCustomLatitude(source.getCustomLatitude());
+        copy.setCustomLongitude(source.getCustomLongitude());
+        return copy;
     }
 
     private void syncLocationCounters(Country oldCountry, City oldCity, Country newCountry, City newCity) {
@@ -604,26 +568,112 @@ public class RouteService {
 
     private void refreshCountryCounter(Country country) {
         if (country == null) return;
-        countryRepository.findById(country.getId()).ifPresent(found -> {
-            found.setRoutesCount(Math.toIntExact(routeRepository.countByPrimaryCountryId(found.getId())));
-            countryRepository.save(found);
-        });
+        int count = Math.toIntExact(routeRepository.countByPrimaryCountryId(country.getId()));
+        countryRepository.updateRoutesCount(country.getId(), count);
     }
 
     private void refreshCityCounter(City city) {
         if (city == null) return;
-        cityRepository.findById(city.getId()).ifPresent(found -> {
-            found.setRoutesCount(Math.toIntExact(routeRepository.countByPrimaryCityId(found.getId())));
-            cityRepository.save(found);
+        int count = Math.toIntExact(routeRepository.countByPrimaryCityId(city.getId()));
+        cityRepository.updateRoutesCount(city.getId(), count);
+    }
+
+    private int safeSize(int size) {
+        return Math.min(Math.max(size, 1), RouteConstants.MAX_PAGE_SIZE);
+    }
+
+    private Page<RouteShortDTO> enrichShortPage(Page<Route> page, User currentUser) {
+        List<Long> routeIds = page.getContent().stream().map(Route::getId).toList();
+        Map<Long, BigDecimal> budgetSpent = budgetService.getBudgetSpentForRoutes(routeIds);
+        Map<Long, Long> packingCounts = routePackingItemRepository.countByRouteIdInAsMap(routeIds);
+        Map<Long, Long> packedCounts = routePackingItemRepository.countPackedByRouteIdInAsMap(routeIds);
+        Map<Long, Long> journalCounts = routeJournalEntryRepository.countByRouteIdInAsMap(routeIds);
+        Map<Long, Long> remixCounts = routeRepository.countForksByOriginalRouteIdsAsMap(routeIds);
+
+        return page.map(route -> {
+            RouteShortDTO dto = routeMapper.toShortDto(route);
+            dto.setAuthor(enrichAuthor(dto.getAuthor()));
+            dto.setAccessRole(routeAccessService.resolveAccessRole(route, currentUser));
+            dto.setCanEdit(routeAccessService.canEdit(route, currentUser));
+            dto.setCanManageCollaborators(routeAccessService.canManageCollaborators(route, currentUser));
+            Long routeId = route.getId();
+            dto.setBudgetSpent(budgetSpent.getOrDefault(routeId, BigDecimal.ZERO));
+            dto.setPackingItemCount(packingCounts.getOrDefault(routeId, 0L));
+            dto.setPackedItemCount(packedCounts.getOrDefault(routeId, 0L));
+            dto.setJournalEntryCount(journalCounts.getOrDefault(routeId, 0L));
+            dto.setRemixCount(remixCounts.getOrDefault(routeId, 0L).intValue());
+            return dto;
         });
     }
 
-    private void normalizeStopOrder(Long routeId) {
-        List<RoutePOI> ordered = routePOIRepository.findByRouteIdOrderByOrderIndexAsc(routeId);
-        for (int index = 0; index < ordered.size(); index++) {
-            RoutePOI routePOI = ordered.get(index);
-            routePOI.setOrderIndex(index + 1);
-            routePOIRepository.save(routePOI);
+    private RouteShortDTO enrichShortDto(RouteShortDTO dto, Route route, User currentUser) {
+        dto.setAuthor(enrichAuthor(dto.getAuthor()));
+        dto.setAccessRole(routeAccessService.resolveAccessRole(route, currentUser));
+        dto.setCanEdit(routeAccessService.canEdit(route, currentUser));
+        dto.setCanManageCollaborators(routeAccessService.canManageCollaborators(route, currentUser));
+        dto.setBudgetSpent(budgetService.getBudgetSpentForRoute(route.getId()));
+        dto.setPackingItemCount(routePackingItemRepository.countByRouteId(route.getId()));
+        dto.setPackedItemCount(routePackingItemRepository.countByRouteIdAndPackedTrue(route.getId()));
+        dto.setJournalEntryCount(routeJournalEntryRepository.countByRouteId(route.getId()));
+        dto.setRemixCount((int) routeRepository.countByForkedFromRouteId(route.getId()));
+        return dto;
+    }
+
+    private RouteResponseDTO enrichResponseDto(RouteResponseDTO dto, Route route, User currentUser) {
+        enrichShortDto(dto, route, currentUser);
+        List<PoiResponseDTO> stops = route.getRoutePois().stream()
+                .sorted(Comparator.comparing(RoutePOI::getOrderIndex))
+                .map(this::mapRoutePOItoDTO)
+                .toList();
+        dto.setStops(stops);
+        dto.setTotalPoints(stops.size());
+        dto.setTotalDurationMinutes(route.getTotalDurationMinutes() != null
+                ? route.getTotalDurationMinutes()
+                : routeOptimizerService.calculateTotalDurationMinutes(route));
+        return dto;
+    }
+
+    private UserShortDTO enrichAuthor(UserShortDTO author) {
+        if (author == null || author.getId() == null) {
+            return author;
         }
+        userStatsRepository.findByUserId(author.getId()).ifPresent(stats -> {
+            author.setLevel(stats.getLevel());
+            author.setLevelTitle(gamificationService.getLevelTitle(stats.getLevel()));
+        });
+        if (author.getLevel() == null) {
+            author.setLevel(1);
+            author.setLevelTitle(gamificationService.getLevelTitle(1));
+        }
+        return author;
+    }
+
+    private static <T> T valueOrDefault(T value, T fallback) {
+        return value != null ? value : fallback;
+    }
+
+    private static <T> T valueOrDefault(T value, Supplier<T> fallback) {
+        return value != null ? value : fallback.get();
+    }
+
+    private static String valueOrBlankDefault(String value, String fallback) {
+        return value != null && !value.isBlank() ? value : fallback;
+    }
+
+    private record RouteMetadata(
+            String name,
+            String description,
+            boolean isPublic,
+            String mainImageUrl,
+            String routeTypeRaw,
+            Long primaryCountryId,
+            Long primaryCityId,
+            String regionLabel,
+            String locationSummary,
+            List<String> vibeTags,
+            LocalDate startDate,
+            LocalDate endDate,
+            BigDecimal totalBudget,
+            String currency) {
     }
 }

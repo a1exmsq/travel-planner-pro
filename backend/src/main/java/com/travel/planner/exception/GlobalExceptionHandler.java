@@ -14,7 +14,6 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 404
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
         return ResponseEntity
@@ -22,8 +21,6 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(ex.getMessage(), 404, System.currentTimeMillis()));
     }
 
-    // 403 — no root
-    // 403 Forbidden
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
         return ResponseEntity
@@ -31,7 +28,6 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(ex.getMessage(), 403, System.currentTimeMillis()));
     }
 
-    // 400 — validation exception (@Valid on DTO)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
@@ -43,7 +39,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(errors);
     }
 
-    // 400 — another errors
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ErrorResponse> handleRuntime(RuntimeException ex) {
         return ResponseEntity

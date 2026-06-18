@@ -18,6 +18,9 @@ public class UserStats {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    private Long version;
+
     @OneToOne
     @JoinColumn(name = "user_id", unique = true)
     private User user;

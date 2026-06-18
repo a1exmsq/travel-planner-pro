@@ -30,8 +30,6 @@ public class Country {
     private String description;
 
     private String imageUrl;
-
-    // emoji (🇵🇱, 🇺🇸, 🇫🇷)
     private String flagEmoji;
 
     @Column(name = "cities_count")

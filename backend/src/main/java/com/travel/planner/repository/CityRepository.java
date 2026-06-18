@@ -3,7 +3,7 @@ package com.travel.planner.repository;
 import com.travel.planner.entity.City;
 import com.travel.planner.entity.Country;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -39,4 +39,8 @@ public interface CityRepository extends JpaRepository<City, Long> {
             @Param("lng") Double longitude,
             @Param("radiusKm") Double radiusKm
     );
+
+    @Modifying
+    @Query("UPDATE City c SET c.routesCount = :count WHERE c.id = :cityId")
+    void updateRoutesCount(@Param("cityId") Long cityId, @Param("count") int count);
 }

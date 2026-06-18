@@ -54,19 +54,13 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // CSRF protection is not needed for stateless REST APIs —
-                // there are no session cookies that an attacker could hijack
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // JWT is stateless: no server-side session is created or used
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Auth endpoints are always public (login / register)
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
-                        // Read-only access to content is public so unregistered users
-                        // can browse routes, POIs and city data without logging in
                         .requestMatchers(HttpMethod.GET, "/api/routes/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/pois/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/locations/**").permitAll()
@@ -76,7 +70,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/leaderboard").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/users/*/stats").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/users/*/achievements").permitAll()
-                        // Everything else requires a valid JWT
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

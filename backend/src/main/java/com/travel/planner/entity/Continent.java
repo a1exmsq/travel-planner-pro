@@ -25,7 +25,7 @@ public class Continent {
     private String name;
 
     @Column(nullable = false, unique = true, length = 2)
-    private String code; // EU, AS, AF, NA, SA, OC
+    private String code;
 
     @Column(length = 2000)
     private String description;

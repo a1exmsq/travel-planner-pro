@@ -1,5 +1,6 @@
 package com.travel.planner.service;
 
+import com.travel.planner.config.OsmConstants;
 import com.travel.planner.dto.OsmImportResultDTO;
 import com.travel.planner.dto.osm.OverpassElement;
 import com.travel.planner.dto.osm.OverpassResponse;
@@ -17,6 +18,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -28,14 +30,6 @@ public class OsmImportService {
     private final CityRepository cityRepository;
 
     private final RestClient restClient = RestClient.create();
-
-    private static final String OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-    // 3.5 km radius covers the walkable city centre for most European cities
-    private static final int RADIUS_METERS  = 3500;
-    // Cap at 250 to avoid bloating the DB on the first import of a large city
-    private static final int MAX_IMPORT     = 250;
-
-    // ── Category mappings ────────────────────────────────────────────
 
     private static final Map<String, String> AMENITY = Map.ofEntries(
         Map.entry("restaurant",        "Restaurant"),
@@ -90,7 +84,6 @@ public class OsmImportService {
         Map.entry("building",           "Landmark")
     );
 
-    // Fallback images by category
     private static final Map<String, String> CATEGORY_IMAGES = Map.ofEntries(
         Map.entry("Restaurant", "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800"),
         Map.entry("Cafe",       "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800"),
@@ -104,11 +97,6 @@ public class OsmImportService {
         Map.entry("Market",     "https://images.unsplash.com/photo-1488459716781-31db52582fe9?w=800"),
         Map.entry("Sport",      "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=800")
     );
-
-    private static final String DEFAULT_IMAGE =
-        "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800";
-
-    // ── Public API ───────────────────────────────────────────────────
 
     @Transactional
     public OsmImportResultDTO importForCity(Long cityId) {
@@ -130,18 +118,18 @@ public class OsmImportService {
             return new OsmImportResultDTO(cityId, city.getName(), 0, 0, 0);
         }
 
-        String batch  = "osm-" + cityId + "-" + System.currentTimeMillis();
+        String batch  = OsmConstants.SOURCE_NAME + "-" + cityId + "-" + System.currentTimeMillis();
         int imported  = 0;
         int skipped   = 0;
 
         for (OverpassElement el : resp.getElements()) {
-            if (imported >= MAX_IMPORT) break;
+            if (imported >= OsmConstants.MAX_IMPORT) break;
             if (el.getTags() == null) continue;
 
             String name = el.getTags().get("name");
             if (name == null || name.isBlank()) continue;
 
-            String osmId = "osm:" + el.getId();
+            String osmId = OsmConstants.EXTERNAL_SOURCE_PREFIX + ":" + el.getId();
             if (poiRepository.existsByExternalSourceId(osmId)) { skipped++; continue; }
 
             String category = resolveCategory(el.getTags());
@@ -152,7 +140,6 @@ public class OsmImportService {
             imported++;
         }
 
-        // Update city POI count
         long total = poiRepository.countByCityIdAndIsGlobalTrue(cityId);
         city.setPoiCount((int) total);
         cityRepository.save(city);
@@ -162,14 +149,9 @@ public class OsmImportService {
         return new OsmImportResultDTO(cityId, city.getName(), imported, skipped, (int) total);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────
-
-    // Builds an Overpass QL query that fetches all tourist-relevant nodes within
-    // RADIUS_METERS of the city centre. Four tag groups are queried separately
-    // and merged with the union operator ( ... ) to maximise coverage.
     private String buildQuery(double lat, double lng) {
-        return String.format("""
-            [out:json][timeout:30];
+        return String.format(Locale.ROOT, """
+            [out:json][timeout:%d];
             (
               node["amenity"~"restaurant|fast_food|cafe|ice_cream|bar|pub|nightclub|museum|theatre|cinema|arts_centre|library|place_of_worship|marketplace"](around:%d,%f,%f);
               node["tourism"~"attraction|monument|museum|gallery|viewpoint|artwork|theme_park|zoo"](around:%d,%f,%f);
@@ -178,18 +160,19 @@ public class OsmImportService {
             );
             out body;
             """,
-            RADIUS_METERS, lat, lng,
-            RADIUS_METERS, lat, lng,
-            RADIUS_METERS, lat, lng,
-            RADIUS_METERS, lat, lng);
+            OsmConstants.QUERY_TIMEOUT_SECONDS,
+            OsmConstants.RADIUS_METERS, lat, lng,
+            OsmConstants.RADIUS_METERS, lat, lng,
+            OsmConstants.RADIUS_METERS, lat, lng,
+            OsmConstants.RADIUS_METERS, lat, lng);
     }
 
     private OverpassResponse fetchOverpass(String query) {
         try {
             String encoded = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
             return restClient.post()
-                .uri(OVERPASS_URL)
-                .header("Content-Type", "application/x-www-form-urlencoded")
+                .uri(OsmConstants.OVERPASS_URL)
+                .header("Content-Type", OsmConstants.CONTENT_TYPE_FORM_URLENCODED)
                 .body(encoded)
                 .retrieve()
                 .body(OverpassResponse.class);
@@ -219,7 +202,7 @@ public class OsmImportService {
         poi.setLongitude(el.getLon());
         poi.setCity(city);
         poi.setIsGlobal(true);
-        poi.setSource("osm");
+        poi.setSource(OsmConstants.SOURCE_NAME);
         poi.setExternalSourceId(osmId);
         poi.setImportBatch(batch);
         poi.setUsageCount(0);
@@ -227,43 +210,36 @@ public class OsmImportService {
         poi.setVerified(false);
         poi.setFeatured(false);
 
-        // Address
         String street = tags.get("addr:street");
         String num    = tags.get("addr:housenumber");
         if (street != null) poi.setAddress(num != null ? street + " " + num : street);
 
-        // Description
         String desc = tags.get("description");
         if (desc == null) desc = tags.get("name:en");
         poi.setDescription(desc);
 
-        // Website as sourceUrl
         if (tags.containsKey("website")) poi.setSourceUrl(tags.get("website"));
 
-        // Quality score reflects how complete the OSM data is for this place.
-        // Used later to rank POIs in the AI prompt (better data → higher priority).
-        int score = 30;
-        if (tags.containsKey("website"))       score += 10;
-        if (tags.containsKey("opening_hours")) score += 10;
-        if (tags.containsKey("phone"))         score += 5;
-        if (tags.containsKey("description"))   score += 10;
-        if (tags.containsKey("image"))         score += 15;
+        int score = OsmConstants.QUALITY_BASE_SCORE;
+        if (tags.containsKey("website"))       score += OsmConstants.QUALITY_WEBSITE_BONUS;
+        if (tags.containsKey("opening_hours")) score += OsmConstants.QUALITY_OPENING_HOURS_BONUS;
+        if (tags.containsKey("phone"))         score += OsmConstants.QUALITY_PHONE_BONUS;
+        if (tags.containsKey("description"))   score += OsmConstants.QUALITY_DESCRIPTION_BONUS;
+        if (tags.containsKey("image"))         score += OsmConstants.QUALITY_IMAGE_BONUS;
         poi.setQualityScore(score);
         poi.setEditorialScore(score);
 
-        // Image
         String img = tags.get("image");
-        if (img == null) img = CATEGORY_IMAGES.getOrDefault(category, DEFAULT_IMAGE);
+        if (img == null) img = CATEGORY_IMAGES.getOrDefault(category, OsmConstants.DEFAULT_IMAGE);
         poi.setImageUrl(img);
         poi.setMainImageUrl(img);
         poi.setGalleryUrls(new ArrayList<>(List.of(img)));
 
-        // Tags
         List<String> poiTags = new ArrayList<>();
         poiTags.add(city.getName().toLowerCase());
         if (city.getCountry() != null) poiTags.add(city.getCountry().getName().toLowerCase());
         poiTags.add(category.toLowerCase());
-        poiTags.add("osm");
+        poiTags.add(OsmConstants.SOURCE_NAME);
         tags.forEach((k, v) -> {
             if (List.of("amenity","tourism","leisure","historic").contains(k))
                 poiTags.add(v.replace("_", " "));

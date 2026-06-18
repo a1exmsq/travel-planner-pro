@@ -9,7 +9,10 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "route_collaborators")
+@Table(
+        name = "route_collaborators",
+        uniqueConstraints = @UniqueConstraint(name = "uq_route_collaborator", columnNames = {"route_id", "user_id"})
+)
 @Getter
 @Setter
 @NoArgsConstructor

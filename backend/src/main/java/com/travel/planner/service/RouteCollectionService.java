@@ -1,5 +1,6 @@
 package com.travel.planner.service;
 
+import com.travel.planner.config.AppConstants;
 import com.travel.planner.dto.CreateRouteCollectionRequestDTO;
 import com.travel.planner.dto.RouteCollectionDTO;
 import com.travel.planner.entity.Route;
@@ -9,11 +10,13 @@ import com.travel.planner.entity.User;
 import com.travel.planner.exception.ResourceNotFoundException;
 import com.travel.planner.repository.RouteCollectionItemRepository;
 import com.travel.planner.repository.RouteCollectionRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -24,10 +27,18 @@ public class RouteCollectionService {
     private final RouteCollectionItemRepository routeCollectionItemRepository;
     private final RouteService routeService;
 
+    @Transactional(readOnly = true)
     public List<RouteCollectionDTO> getMyCollections(User currentUser) {
         return routeCollectionRepository.findByUserIdOrderByIdDesc(currentUser.getId()).stream()
                 .map(this::toDTO)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<RouteCollectionDTO> getMyCollections(User currentUser, int page, int size) {
+        Pageable pageable = PageRequest.of(page, Math.min(size, AppConstants.MAX_PAGE_SIZE));
+        return routeCollectionRepository.findByUserIdOrderByIdDesc(currentUser.getId(), pageable)
+                .map(this::toDTO);
     }
 
     @Transactional
@@ -82,10 +93,7 @@ public class RouteCollectionService {
         dto.setName(collection.getName());
         dto.setDescription(collection.getDescription());
 
-        List<RouteCollectionItem> items = collection.getItems().stream()
-                .sorted(Comparator.comparing(RouteCollectionItem::getId).reversed())
-                .toList();
-
+        List<RouteCollectionItem> items = collection.getItems();
         dto.setRoutes(items.stream()
                 .map(RouteCollectionItem::getRoute)
                 .map(routeService::convertToDTO)

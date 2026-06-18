@@ -7,10 +7,13 @@ import com.travel.planner.exception.ResourceNotFoundException;
 import com.travel.planner.repository.LikeRepository;
 import com.travel.planner.repository.RouteRepository;
 import com.travel.planner.repository.UserRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LikeService {
@@ -21,6 +24,7 @@ public class LikeService {
     private final RouteAccessService routeAccessService;
     private final GamificationService gamificationService;
 
+    @Transactional(readOnly = true)
     public boolean isLikedByUser(Long userId, Long routeId, User currentUser) {
         routeAccessService.findViewableRoute(routeId, currentUser);
         return likeRepository.existsByUser_IdAndRoute_Id(userId, routeId);
@@ -29,15 +33,22 @@ public class LikeService {
     @Transactional
     public void like(Long userId, Long routeId, User currentUser) {
         Route route = routeAccessService.findViewableRoute(routeId, currentUser);
-        if (likeRepository.existsByUser_IdAndRoute_Id(userId, routeId)) return;
+        if (likeRepository.existsByUser_IdAndRoute_Id(userId, routeId)) {
+            return;
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
         Like like = new Like();
         like.setUser(user);
         like.setRoute(route);
-        likeRepository.save(like);
-        routeRepository.incrementLikeCount(routeId);
-        gamificationService.checkAndUnlockAchievements(route.getUser().getId());
+        try {
+            likeRepository.save(like);
+            routeRepository.incrementLikeCount(routeId);
+            gamificationService.checkAndUnlockAchievements(route.getUser().getId());
+        } catch (DataIntegrityViolationException e) {
+            log.debug("Like already exists for user={} route={}", userId, routeId);
+        }
     }
 
     @Transactional

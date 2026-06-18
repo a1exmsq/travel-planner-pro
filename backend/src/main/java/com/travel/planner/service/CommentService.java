@@ -1,5 +1,6 @@
 package com.travel.planner.service;
 
+import com.travel.planner.config.AppConstants;
 import com.travel.planner.dto.CommentResponseDTO;
 import com.travel.planner.entity.Comment;
 import com.travel.planner.entity.Route;
@@ -8,9 +9,12 @@ import com.travel.planner.exception.ForbiddenException;
 import com.travel.planner.exception.ResourceNotFoundException;
 import com.travel.planner.repository.CommentRepository;
 import com.travel.planner.repository.UserRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -36,12 +40,20 @@ public class CommentService {
         gamificationService.checkAndUnlockAchievements(user.getId());
     }
 
+    @Transactional(readOnly = true)
     public List<CommentResponseDTO> getComments(Long routeId, User currentUser) {
         routeAccessService.findViewableRoute(routeId, currentUser);
-        return commentRepository.findByRoute_IdOrderByCreatedAtDesc(routeId)
-                .stream()
+        return commentRepository.findByRoute_IdOrderByCreatedAtDesc(routeId).stream()
                 .map(CommentResponseDTO::from)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<CommentResponseDTO> getComments(Long routeId, int page, int size, User currentUser) {
+        routeAccessService.findViewableRoute(routeId, currentUser);
+        Pageable pageable = PageRequest.of(page, Math.min(size, AppConstants.MAX_PAGE_SIZE));
+        return commentRepository.findByRoute_IdOrderByCreatedAtDesc(routeId, pageable)
+                .map(CommentResponseDTO::from);
     }
 
     @Transactional
@@ -50,7 +62,7 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
         boolean isAuthor = comment.getUser().getId().equals(currentUser.getId());
         boolean isRouteOwner = comment.getRoute().getUser().getId().equals(currentUser.getId());
-        boolean isAdmin = "ADMIN".equals(currentUser.getRole());
+        boolean isAdmin = AppConstants.ADMIN_ROLE.equals(currentUser.getRole());
         if (!isAuthor && !isRouteOwner && !isAdmin) {
             throw new ForbiddenException("No rights to delete this comment");
         }

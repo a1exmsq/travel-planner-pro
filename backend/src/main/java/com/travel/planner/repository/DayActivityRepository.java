@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface DayActivityRepository extends JpaRepository<DayActivity, Long> {
     List<DayActivity> findByRouteDayIdOrderByOrderIndexAsc(Long routeDayId);
+    long countByRouteDayId(Long routeDayId);
 }

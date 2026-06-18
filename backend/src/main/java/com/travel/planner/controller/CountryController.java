@@ -1,13 +1,15 @@
 package com.travel.planner.controller;
 
 import com.travel.planner.dto.CountryDTO;
-import com.travel.planner.dto.RouteResponseDTO;
+import com.travel.planner.dto.RouteShortDTO;
 import com.travel.planner.service.LocationService;
 import com.travel.planner.service.RouteService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -36,8 +38,12 @@ public class CountryController {
     }
 
     @GetMapping("/{id}/routes")
-    public List<RouteResponseDTO> getRoutesByCountry(@PathVariable Long id) {
-        return routeService.getPublicRoutesByCountryId(id);
+    public Page<RouteShortDTO> getRoutesByCountry(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return routeService.getPublicRoutesByCountryId(id, page, size);
     }
 
     @GetMapping("/{id}/cities")

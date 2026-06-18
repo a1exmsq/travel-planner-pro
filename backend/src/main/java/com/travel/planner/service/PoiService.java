@@ -1,5 +1,6 @@
 package com.travel.planner.service;
 
+import com.travel.planner.config.PoiConstants;
 import com.travel.planner.dto.PoiCatalogResponseDTO;
 import com.travel.planner.dto.PoiCategoryCountDTO;
 import com.travel.planner.dto.PoiResponseDTO;
@@ -46,13 +47,13 @@ public class PoiService {
         poi.setCity(city);
         poi.setLatitude(coords[0]);
         poi.setLongitude(coords[1]);
-        poi.setMainImageUrl("https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=1000&auto=format&fit=crop");
-        poi.setSource("auto");
+        poi.setMainImageUrl(PoiConstants.DEFAULT_AUTO_IMAGE);
+        poi.setSource(PoiConstants.SOURCE_AUTO);
         poi.setVerified(false);
         poi.setFeatured(false);
-        poi.setQualityScore(52);
-        poi.setEditorialScore(40);
-        poi.setVisitMinutes(60);
+        poi.setQualityScore(PoiConstants.AUTO_QUALITY_SCORE);
+        poi.setEditorialScore(PoiConstants.AUTO_EDITORIAL_SCORE);
+        poi.setVisitMinutes(PoiConstants.AUTO_VISIT_MINUTES);
 
         return poiRepository.save(poi);
     }
@@ -61,7 +62,7 @@ public class PoiService {
         poi.setUser(user);
 
         int currentPoints = user.getPoints() != null ? user.getPoints() : 0;
-        user.setPoints(currentPoints + 5);
+        user.setPoints(currentPoints + PoiConstants.POI_CREATION_POINTS);
 
         userRepository.save(user);
         return poiRepository.save(poi);
@@ -87,7 +88,7 @@ public class PoiService {
     }
 
     public List<PoiResponseDTO> getGlobalPOIsByCountry(Long countryId, Integer limit) {
-        int safeLimit = normalizeLimit(limit, 120);
+        int safeLimit = normalizeLimit(limit, PoiConstants.CATALOG_DEFAULT_LIMIT);
         return poiRepository.findGlobalPOIsByCountryId(countryId, PageRequest.of(0, safeLimit))
                 .stream()
                 .map(PoiResponseDTO::new)
@@ -111,7 +112,7 @@ public class PoiService {
     ) {
         String normalizedCategory = category == null || category.isBlank() ? null : category.trim();
         String normalizedQuery = query == null || query.isBlank() ? null : query.trim();
-        int safeLimit = normalizeLimit(limit, 120);
+        int safeLimit = normalizeLimit(limit, PoiConstants.CATALOG_DEFAULT_LIMIT);
 
         List<PoiResponseDTO> items = selectCatalogItems(
                 cityId,
@@ -153,7 +154,7 @@ public class PoiService {
     ) {
         String normalizedCategory = category == null || category.isBlank() ? null : category.trim();
         String normalizedQuery = query == null || query.isBlank() ? null : query.trim();
-        int safeLimit = normalizeLimit(limit, 64);
+        int safeLimit = normalizeLimit(limit, PoiConstants.USER_POI_DEFAULT_LIMIT);
 
         return poiRepository.findByUserIdAndIsGlobalFalse(userId)
                 .stream()
@@ -174,13 +175,13 @@ public class PoiService {
         poi.setUser(user);
         poi.setIsGlobal(false);
         poi.setUsageCount(0);
-        poi.setSource(poi.getSource() == null || poi.getSource().isBlank() ? "user" : poi.getSource());
+        poi.setSource(poi.getSource() == null || poi.getSource().isBlank() ? PoiConstants.SOURCE_USER : poi.getSource());
         poi.setVerified(false);
         poi.setFeatured(false);
-        poi.setEditorialScore(poi.getEditorialScore() == null ? 35 : poi.getEditorialScore());
-        poi.setQualityScore(poi.getQualityScore() == null ? 35 : poi.getQualityScore());
-        poi.setVisitMinutes(poi.getVisitMinutes() == null ? 45 : poi.getVisitMinutes());
-        poi.setPriceLevel(poi.getPriceLevel() == null ? 0 : poi.getPriceLevel());
+        poi.setEditorialScore(poi.getEditorialScore() == null ? PoiConstants.USER_EDITORIAL_SCORE : poi.getEditorialScore());
+        poi.setQualityScore(poi.getQualityScore() == null ? PoiConstants.USER_QUALITY_SCORE : poi.getQualityScore());
+        poi.setVisitMinutes(poi.getVisitMinutes() == null ? PoiConstants.USER_VISIT_MINUTES : poi.getVisitMinutes());
+        poi.setPriceLevel(poi.getPriceLevel() == null ? PoiConstants.DEFAULT_PRICE_LEVEL : poi.getPriceLevel());
         return poiRepository.save(poi);
     }
 
@@ -188,13 +189,13 @@ public class PoiService {
     public PointOfInterest createGlobalPOI(PointOfInterest poi) {
         poi.setIsGlobal(true);
         poi.setUsageCount(0);
-        poi.setSource(poi.getSource() == null || poi.getSource().isBlank() ? "curated" : poi.getSource());
+        poi.setSource(poi.getSource() == null || poi.getSource().isBlank() ? PoiConstants.SOURCE_CURATED : poi.getSource());
         poi.setVerified(poi.getVerified() != null ? poi.getVerified() : true);
         poi.setFeatured(poi.getFeatured() != null ? poi.getFeatured() : true);
-        poi.setEditorialScore(poi.getEditorialScore() == null ? 80 : poi.getEditorialScore());
-        poi.setQualityScore(poi.getQualityScore() == null ? 78 : poi.getQualityScore());
-        poi.setVisitMinutes(poi.getVisitMinutes() == null ? 60 : poi.getVisitMinutes());
-        poi.setPriceLevel(poi.getPriceLevel() == null ? 0 : poi.getPriceLevel());
+        poi.setEditorialScore(poi.getEditorialScore() == null ? PoiConstants.GLOBAL_EDITORIAL_SCORE : poi.getEditorialScore());
+        poi.setQualityScore(poi.getQualityScore() == null ? PoiConstants.GLOBAL_QUALITY_SCORE : poi.getQualityScore());
+        poi.setVisitMinutes(poi.getVisitMinutes() == null ? PoiConstants.GLOBAL_VISIT_MINUTES : poi.getVisitMinutes());
+        poi.setPriceLevel(poi.getPriceLevel() == null ? PoiConstants.DEFAULT_PRICE_LEVEL : poi.getPriceLevel());
         return poiRepository.save(poi);
     }
 
@@ -223,7 +224,7 @@ public class PoiService {
             return fallback;
         }
 
-        return Math.max(1, Math.min(requestedLimit, 240));
+        return Math.max(1, Math.min(requestedLimit, PoiConstants.MAX_LIMIT));
     }
 
     private List<PoiResponseDTO> selectCatalogItems(

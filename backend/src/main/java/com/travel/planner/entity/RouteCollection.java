@@ -32,5 +32,6 @@ public class RouteCollection {
     private User user;
 
     @OneToMany(mappedBy = "collection", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id DESC")
     private List<RouteCollectionItem> items = new ArrayList<>();
 }

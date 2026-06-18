@@ -6,7 +6,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "route_likes")
+@Table(
+        name = "route_likes",
+        uniqueConstraints = @UniqueConstraint(name = "uq_route_like", columnNames = {"user_id", "route_id"})
+)
 @Getter
 @Setter
 @NoArgsConstructor

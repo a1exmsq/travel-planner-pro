@@ -1,11 +1,16 @@
 package com.travel.planner.service;
 
+import com.travel.planner.config.OptimizerConstants;
 import com.travel.planner.entity.Route;
 import com.travel.planner.entity.RoutePOI;
 import com.travel.planner.entity.RouteType;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @Service
 public class RouteOptimizerService {
@@ -15,7 +20,7 @@ public class RouteOptimizerService {
                 .sorted(Comparator.comparing(RoutePOI::getOrderIndex))
                 .toList();
 
-        if (ordered.size() < 3) {
+        if (ordered.size() < OptimizerConstants.MIN_STOPS_FOR_OPTIMIZATION) {
             applyMetrics(route, ordered, false);
             return ordered;
         }
@@ -24,14 +29,11 @@ public class RouteOptimizerService {
                 .filter(this::hasCoordinates)
                 .toList();
 
-        if (coordinateStops.size() < 2) {
+        if (coordinateStops.size() < OptimizerConstants.MIN_COORDINATE_STOPS) {
             applyMetrics(route, ordered, false);
             return ordered;
         }
 
-        // Nearest-neighbour greedy algorithm: at each step pick the unvisited
-        // stop closest to the current one. O(n²) but perfectly fine for n ≤ 250.
-        // Not globally optimal (TSP is NP-hard) but gives good results in practice.
         List<RoutePOI> optimized = new ArrayList<>();
         Set<Long> visited = new HashSet<>();
         RoutePOI first = coordinateStops.getFirst();
@@ -104,13 +106,11 @@ public class RouteOptimizerService {
         if (distanceKm <= 0) {
             return 0;
         }
-        // Road trips use 30 km/h (city driving with stops);
-        // city walks use 5 km/h (average pedestrian pace)
         double speedKmPerHour = switch (routeType != null ? routeType : RouteType.CUSTOM) {
-            case MULTI_CITY, ROAD_TRIP -> 30.0;
-            case CITY, REGION, CUSTOM -> 5.0;
+            case MULTI_CITY, ROAD_TRIP -> OptimizerConstants.ROAD_TRIP_SPEED_KMH;
+            case CITY, REGION, CUSTOM -> OptimizerConstants.CITY_WALK_SPEED_KMH;
         };
-        return (int) Math.round((distanceKm / speedKmPerHour) * 60.0);
+        return (int) Math.round((distanceKm / speedKmPerHour) * OptimizerConstants.SECONDS_PER_MINUTE);
     }
 
     public double calculateDistanceKm(RoutePOI left, RoutePOI right) {
@@ -123,14 +123,12 @@ public class RouteOptimizerService {
         double lat2 = Math.toRadians(right.getEffectiveLatitude());
         double lon2 = Math.toRadians(right.getEffectiveLongitude());
 
-        // Haversine formula — calculates the great-circle distance between two
-        // points on a sphere. 6371.0 km is the mean radius of the Earth.
         double dLat = lat2 - lat1;
         double dLon = lon2 - lon1;
         double a = Math.pow(Math.sin(dLat / 2), 2)
                 + Math.cos(lat1) * Math.cos(lat2) * Math.pow(Math.sin(dLon / 2), 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return 6371.0 * c;
+        return OptimizerConstants.EARTH_RADIUS_KM * c;
     }
 
     private boolean hasCoordinates(RoutePOI stop) {
@@ -155,8 +153,8 @@ public class RouteOptimizerService {
             RoutePOI previous = orderedStops.get(index - 1);
             double legDistanceKm = calculateDistanceKm(previous, current);
             int legTravelMinutes = calculateTravelMinutes(route.getRouteType(), previous, current);
-            current.setDistanceMeters(legDistanceKm * 1000.0);
-            current.setDurationSeconds(legTravelMinutes * 60);
+            current.setDistanceMeters(legDistanceKm * OptimizerConstants.METERS_PER_KM);
+            current.setDurationSeconds(legTravelMinutes * OptimizerConstants.SECONDS_PER_MINUTE);
             totalDistance += legDistanceKm;
             totalDuration += legTravelMinutes;
         }
@@ -167,6 +165,6 @@ public class RouteOptimizerService {
     }
 
     private double round(double value) {
-        return Math.round(value * 10.0) / 10.0;
+        return Math.round(value * OptimizerConstants.ROUNDING_FACTOR) / OptimizerConstants.ROUNDING_FACTOR;
     }
 }

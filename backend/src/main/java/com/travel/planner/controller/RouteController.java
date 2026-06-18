@@ -12,6 +12,7 @@ import com.travel.planner.dto.ReorderRequestDTO;
 import com.travel.planner.dto.RouteDayDTO;
 import com.travel.planner.dto.RoutePlanDTO;
 import com.travel.planner.dto.RouteResponseDTO;
+import com.travel.planner.dto.RouteShortDTO;
 import com.travel.planner.dto.UpdateRouteRequestDTO;
 import com.travel.planner.dto.UpdateStopRequestDTO;
 import com.travel.planner.entity.PointOfInterest;
@@ -24,6 +25,7 @@ import com.travel.planner.service.PoiService;
 import com.travel.planner.service.RouteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -69,7 +71,7 @@ public class RouteController {
     }
 
     @GetMapping
-    public List<RouteResponseDTO> getAllRoutes(
+    public Page<RouteShortDTO> getAllRoutes(
             @RequestParam(required = false) String tag,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
@@ -281,20 +283,26 @@ public class RouteController {
     }
 
     @GetMapping("/search")
-    public List<RouteResponseDTO> search(
+    public Page<RouteShortDTO> search(
             @RequestParam String name,
-            @RequestParam(required = false) String tag
+            @RequestParam(required = false) String tag,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
-        return routeService.searchByName(name, tag);
+        return routeService.searchByName(name, tag, page, size);
     }
 
     @GetMapping("/user/{username}")
-    public List<RouteResponseDTO> getByUser(@PathVariable String username) {
-        return routeService.getPublicRoutesByUsername(username);
+    public Page<RouteShortDTO> getByUser(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return routeService.getPublicRoutesByUsername(username, page, size);
     }
 
     @GetMapping("/trending")
-    public List<RouteResponseDTO> getTrending(
+    public Page<RouteShortDTO> getTrending(
             @RequestParam(required = false) String tag,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
@@ -303,12 +311,16 @@ public class RouteController {
     }
 
     @GetMapping("/my")
-    public List<RouteResponseDTO> getMyRoutes(@AuthenticationPrincipal User currentUser) {
-        return routeService.getRoutesByUserId(currentUser.getId());
+    public Page<RouteShortDTO> getMyRoutes(
+            @AuthenticationPrincipal User currentUser,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return routeService.getRoutesByUserId(currentUser.getId(), currentUser, page, size);
     }
 
     @GetMapping("/popular")
-    public List<RouteResponseDTO> getPopular(
+    public Page<RouteShortDTO> getPopular(
             @RequestParam(required = false) String tag,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size

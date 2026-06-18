@@ -20,7 +20,7 @@ public class PointOfInterest {
     private String name;
     private String category;
 
-    @Column(length = 1000) // Описание может быть длинным
+    @Column(length = 1000)
     private String description;
 
     private Double rating = 0.0;
@@ -40,7 +40,7 @@ public class PointOfInterest {
     @Column(columnDefinition = "TEXT")
     private String mainImageUrl;
 
-    @ElementCollection // Простой способ хранить список строк (ссылок на фото)
+    @ElementCollection
     @CollectionTable(name = "poi_images", joinColumns = @JoinColumn(name = "poi_id"))
     @Column(name = "image_url", columnDefinition = "TEXT")
     private List<String> galleryUrls = new ArrayList<>();

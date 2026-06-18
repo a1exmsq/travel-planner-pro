@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -86,6 +87,21 @@ public class BudgetService {
         return routeExpenseRepository.findByRouteIdOrderByDateAscIdAsc(routeId).stream()
                 .map(expense -> safe(expense.getActualAmount() != null ? expense.getActualAmount() : expense.getPlannedAmount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public Map<Long, BigDecimal> getBudgetSpentForRoutes(Collection<Long> routeIds) {
+        if (routeIds == null || routeIds.isEmpty()) {
+            return Map.of();
+        }
+        return routeExpenseRepository.findByRouteIdIn(routeIds).stream()
+                .collect(Collectors.groupingBy(
+                        expense -> expense.getRoute().getId(),
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                expense -> safe(expense.getActualAmount() != null ? expense.getActualAmount() : expense.getPlannedAmount()),
+                                BigDecimal::add
+                        )
+                ));
     }
 
     public BigDecimal getBudgetForDate(Long routeId, LocalDate date) {

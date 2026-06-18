@@ -1,12 +1,13 @@
 package com.travel.planner.controller;
 
 import com.travel.planner.dto.CityDTO;
-import com.travel.planner.dto.RouteResponseDTO;
+import com.travel.planner.dto.RouteShortDTO;
 import com.travel.planner.dto.WeatherOverviewDTO;
 import com.travel.planner.service.LocationService;
 import com.travel.planner.service.RouteService;
 import com.travel.planner.service.WeatherService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,8 +37,12 @@ public class CityController {
     }
 
     @GetMapping("/{id}/routes")
-    public List<RouteResponseDTO> getRoutesByCity(@PathVariable Long id) {
-        return routeService.getPublicRoutesByCityId(id);
+    public Page<RouteShortDTO> getRoutesByCity(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return routeService.getPublicRoutesByCityId(id, page, size);
     }
 
     @GetMapping("/{id}/weather")

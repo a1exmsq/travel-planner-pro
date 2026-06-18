@@ -22,6 +22,9 @@ public class RouteDay {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    private Long version;
+
     @ManyToOne
     @JoinColumn(name = "route_id")
     private Route route;

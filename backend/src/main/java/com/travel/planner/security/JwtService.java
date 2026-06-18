@@ -19,7 +19,6 @@ public class JwtService {
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.expiration-ms}") long expirationMs
     ) {
-        // Derive an HMAC-SHA key from the secret string (must be at least 32 chars for HS256)
         this.key = Keys.hmacShaKeyFor(secret.getBytes());
         this.expirationMs = expirationMs;
     }
@@ -44,7 +43,6 @@ public class JwtService {
 
     public boolean isTokenValid(String token) {
         try {
-            // parseClaimsJws throws if signature is wrong, token is expired, or format is invalid
             Jwts.parserBuilder()
                     .setSigningKey(key)
                     .build()
