@@ -8,6 +8,7 @@ import type { User } from '../components/AuthModal'
 import type { CityDTO } from '../types/location'
 import type { PoiResponseDTO, RouteResponseDTO } from '../types/route'
 import type { WeatherOverviewDTO } from '../types/weather'
+import { asArray } from '../utils/apiResponse'
 
 interface CityPageProps {
   currentUser: User | null
@@ -120,7 +121,7 @@ export default function CityPage({ currentUser, onLoginRequest }: CityPageProps)
     ])
 
     setCity(cityResponse.data)
-    setRoutes(routesResponse.data || [])
+    setRoutes(asArray<RouteResponseDTO>(routesResponse.data))
     const loadedPois: PoiResponseDTO[] = poisResponse.data || []
     setPois(loadedPois)
     setWeather(weatherResponse.data)

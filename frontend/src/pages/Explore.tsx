@@ -5,6 +5,7 @@ import RouteCard from '../components/RouteCard'
 import type { User } from '../components/AuthModal'
 import type { CityDTO, ContinentDTO, CountryDTO } from '../types/location'
 import type { RouteResponseDTO } from '../types/route'
+import { extractPage } from '../utils/apiResponse'
 import { formatVibeTag } from '../utils/routeMeta'
 
 interface ExploreProps {
@@ -112,11 +113,11 @@ export default function Explore({ currentUser, onLoginRequest }: ExploreProps) {
         ])
 
         if (!cancelled) {
-          const loaded: RouteResponseDTO[] = routesResponse.data || []
+          const { content: loaded, meta } = extractPage<RouteResponseDTO>(routesResponse.data)
           setRoutes(loaded)
-          setHasMore(!debouncedQuery && loaded.length === PAGE_SIZE)
-          setCountries(countriesResponse.data)
-          setCities(citiesResponse.data)
+          setHasMore(!debouncedQuery && (meta.last === undefined ? loaded.length === PAGE_SIZE : !meta.last))
+          setCountries(countriesResponse.data || [])
+          setCities(citiesResponse.data || [])
           setTags(tagsResponse.data || [])
         }
       } catch {
@@ -146,10 +147,10 @@ export default function Explore({ currentUser, onLoginRequest }: ExploreProps) {
     try {
       const { url, params } = buildRoutesEndpoint(feed, nextPage)
       const response = await api.get(url, { params: { ...params, tag: selectedTag || undefined } })
-      const loaded: RouteResponseDTO[] = response.data || []
+      const { content: loaded, meta } = extractPage<RouteResponseDTO>(response.data)
       setRoutes((prev) => [...prev, ...loaded])
       setPage(nextPage)
-      setHasMore(loaded.length === PAGE_SIZE)
+      setHasMore(meta.last === undefined ? loaded.length === PAGE_SIZE : !meta.last)
     } catch {
       // silently fail, user can retry
     } finally {

@@ -6,6 +6,7 @@ import RouteCard from '../components/RouteCard'
 import type { User } from '../components/AuthModal'
 import type { CityDTO, CountryDTO } from '../types/location'
 import type { RouteResponseDTO } from '../types/route'
+import { asArray } from '../utils/apiResponse'
 
 interface CountryPageProps {
   currentUser: User | null
@@ -71,8 +72,8 @@ export default function CountryPage({ currentUser, onLoginRequest }: CountryPage
     ])
       .then(([countryResponse, citiesResponse, routesResponse]) => {
         setCountry(countryResponse.data)
-        setCities(citiesResponse.data)
-        setRoutes(routesResponse.data)
+        setCities(citiesResponse.data || [])
+        setRoutes(asArray<RouteResponseDTO>(routesResponse.data))
       })
       .finally(() => setLoading(false))
   }, [id])

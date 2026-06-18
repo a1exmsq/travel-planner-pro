@@ -10,6 +10,7 @@ import RouteCard from '../components/RouteCard'
 import type { CityDTO } from '../types/location'
 import type { PoiCatalogResponseDTO } from '../types/poi'
 import type { PoiResponseDTO, RouteResponseDTO } from '../types/route'
+import { asArray } from '../utils/apiResponse'
 
 interface HomeProps {
   user: User | null
@@ -134,7 +135,7 @@ export default function Home({ user, setIsAuthOpen }: HomeProps) {
       setIsRoutesLoading(true)
       try {
         const response = await api.get(feedTab === 'trending' ? '/routes/trending' : '/routes')
-        if (!cancelled) setRoutes(response.data || [])
+        if (!cancelled) setRoutes(asArray<RouteResponseDTO>(response.data))
       } catch (error) {
         console.error('Failed to load route feed:', error)
         if (!cancelled) setRoutes([])

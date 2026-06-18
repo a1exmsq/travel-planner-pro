@@ -9,6 +9,7 @@ import type { RouteCollectionDTO } from '../types/collection'
 import type { InvitationDTO } from '../types/collaboration'
 import type { UserAchievementDTO, UserStatsDTO } from '../types/gamification'
 import type { RouteResponseDTO } from '../types/route'
+import { asArray } from '../utils/apiResponse'
 
 const rarityStyles: Record<string, string> = {
   COMMON: 'border-slate-200 bg-white text-slate-700 dark:border-white/[0.08] dark:bg-black/18 dark:text-white',
@@ -48,8 +49,8 @@ export default function Profile({ user }: { user: User | null }) {
       api.get('/users/me/invitations'),
     ])
       .then(([routesResponse, collectionsResponse, statsResponse, achievementsResponse, invitationsResponse]) => {
-        const loadedRoutes = routesResponse.data || []
-        const loadedAchievements = achievementsResponse.data || []
+        const loadedRoutes = asArray<RouteResponseDTO>(routesResponse.data)
+        const loadedAchievements = asArray<UserAchievementDTO>(achievementsResponse.data)
 
         setMyRoutes(loadedRoutes)
         setCollections(collectionsResponse.data || [])
